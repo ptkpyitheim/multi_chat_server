@@ -1,0 +1,16 @@
+{
+  "name": "package.json",
+  "version": "1.0.0",
+  "description": "package",
+  "main": "chat_server.js",
+  "dependencies": {
+    "mime": "^2.4.0",
+    "socket.io": "^2.2.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "j"
+  },
+  "author": "",
+  "license": "ISC"
+}

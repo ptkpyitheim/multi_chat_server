@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+   <head>
+    <!-- Bootstrap CDN -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+
+
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            font-size: 12px;
+            background-color: #eee;
+        }
+
+        #chat_room_text {
+            width: 100px;
+            padding: 0;
+            margin: 0;
+        }
+
+        #private_msg_href {
+            margin-top: 100px;
+        }
+    </style>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+    <!-- Emoji Creative Portion -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/emojionearea/3.4.1/emojionearea.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/emojionearea/3.4.1/emojionearea.min.js"></script>
+
+    <title>Multi-Chatroom Server</title>
+
+   </head>
+
+   <body>
+       <p class="h3 text-center bg-dark text-light py-2">Welcome <span id="logged_user"> </span> , to Multi-room Chat Server</p>
+       <p class="h4 text-center">Chat away...</p>
+
+       <div class="container" id="login_logout">
+            <label for="logged_nickname">To get started, enter your nickname: </label>
+            <input id="logged_nickname" type="text">
+            <button class="btn btn-outline-success btn-sm p-0 ml-1" id="loginBtn">Go!</button>
+       </div>
+
+       <div class="container border-top pt-2" id="message_box">
+           <div class="row bg-light py-3 rounded">
+
+                <div class="col">
+                    <p class="h5">Current active rooms</p>
+
+                    <div id="active_rooms" class="list-group">
+                        <button id="main_lobby" class="list-group-item list-group-item-action">Main Lobby</button>
+                    </div>
+
+                </div>
+
+                <div class="col">
+                    <p class="h5">Create a chat room</p>
+                    <label for="chatroom_name">Chat room name: </label>
+                    <input type="text" id="chatroom_name"/>
+                    <button class="btn btn-outline-primary btn-sm p-0 ml-1" id="create_room">Create</button>
+
+                    <br>
+                    <input type="radio" name="room_type" value="public"> Public
+                    <input class="ml-2" type="radio" name="room_type" value="private"> Private
+
+                    <br>
+                    <div id="pass_box">
+                        Enter your password: 
+                        <input type="password" id="password">
+                    </div>
+                   
+
+                </div>
+            </div>
+
+            <div class="row mt-1">
+                <div class="col border border-secondary py-3 mb-3 rounded">
+
+                    <div>
+                        <p class="h5" id="chat_room_text">Chat room</p>
+                        <p class="float-right">Current Room: <span class="h6 text-primary" id="current_room"></span></p>
+                    </div>
+
+                    <hr>
+
+                    <label for="message_input">Send a message: </label>
+                    <input type="text" id="message_input"/>
+                    <button class="btn btn-outline-secondary btn-sm p-0 ml-1" onclick="sendMessage()">Send</button>
+
+                    <p class="h6 mt-3 border-bottom">Messages</p>
+                        
+                    <div id="chatlog" class="mt-1">
+
+                    </div>
+    
+                </div>
+
+                <div class="col py-3">
+                    <p class="h5">Users in the room: </p>
+
+                    <button id="privateMsgBtn" class="btn btn-outline-info btn-sm p-0 ml-1 justify-content-center">Private Message</button>
+
+                    <button id="banBtn" class="float-right btn btn-outline-danger btn-sm p-0 ml-1">Ban</button>
+
+                    <button id="kickBtn" class="float-right btn btn-outline-warning btn-sm p-0 ml-1">Kick</button>
+                    <hr>
+                    <div class="ml-2" id="users_in_the_room">
+
+                    </div>
+
+                </div>
+            </div>
+       </div>
+
+
+       <div class="container mb-4" id="private_msg_href">
+           <div class="row justify-content-center border border-top bg-white">
+               <div class="col text-center">
+                    <p class="h6 mt-2">Private Messaging</p>
+                    
+                    <hr>
+
+                    <span>Send a message: </span>
+                    <input type="text" id="private_message_input">
+
+                    <button id="private_sendBtn" class="btn btn-outline-secondary btn-sm p-0 ml-1">Send</button>
+
+                    <div class="mt-2" id="private_msg_box">
+                        
+                    </div>
+
+
+               </div>
+           </div>
+       </div>
+
+
+       <!-- Script starts -->
+
+       <script>
+
+        let d = document;
+        var socketio = io.connect();
+    
+        //global variables
+        let curruser = "";   //current user
+        let curr_room = "";   //current room the user's in
+        let room_creator = "";
+        let my_banned_rooms = [];
+    
+    
+        function init() {
+            curr_room = "Main Lobby";
+            room_creator = "";
+    
+            //Hide
+            $('#pass_box').hide();
+    
+            $('#private_msg_href').hide();
+            $('#banBtn').hide();
+            $('#kickBtn').hide();
+    
+            //Active Main Lobby
+            $('#current_room').html(curr_room);
+    
+            let listgroup = d.getElementsByClassName('list-group-item');
+            for(let i=0; i < listgroup.length; i++) {
+                listgroup[i].style.backgroundColor = "";
+                listgroup[i].style.color = "";
+            }
+            d.getElementById("main_lobby").style.backgroundColor = "lightblue";
+            d.getElementById("main_lobby").style.color = "white";
+    
+            //Delete all users in the room
+            $('#users_in_the_room').html("");
+            //Delete all chat message
+            $('#chatlog').html("");
+            //Delete private_msg_box
+            $('#private_msg_box').html("");
+    
+    
+            if(curr_room === "Main Lobby") {
+                socketio.emit('main_lobby_to_server', {message: "main"} );
+            }
+    
+        }
+    
+        $(d).ready(init);
+    
+        socketio.on('main_lobby_to_client', function(data) {
+    
+            if(curr_room === "Main Lobby") {
+                //Delete all users in the room
+                $('#users_in_the_room').html("");
+    
+                let users_inthe_room = data['users_inthe_room'];
+    
+                for(let i=0; i < users_inthe_room.length; i++) {
+                    let usr = d.createElement("p");
+                    let newuser = d.createElement("INPUT");
+    
+                    newuser.setAttribute("type", "radio");
+                    newuser.setAttribute("name", "user_radio");
+                    newuser.setAttribute("value", users_inthe_room[i]);
+    
+    
+                    usr.appendChild(newuser);
+                    usr.appendChild(d.createTextNode(users_inthe_room[i]));
+    
+                    d.getElementById("users_in_the_room").appendChild(usr);
+                        
+                }
+            }
+    
+        });
+    
+        socketio.on("message_to_client",function(data) {
+           //Append an HR thematic break and the escaped HTML of the new message
+           let roomname = data['current_room'];
+    
+           if(curr_room !== roomname) {
+                return;
+            }
+    
+            d.getElementById("chatlog").appendChild(document.createTextNode(data['message']));
+            d.getElementById("chatlog").appendChild(document.createElement("hr"));
+    
+        });
+    
+        socketio.on("created_user_to_client",function(data) { 
+           d.getElementById("user_exist_msg").innerHTML = data['message'];
+        });
+    
+        socketio.on("logged_user_to_client",function(data) { 
+            if(data['message'] === "fail") {
+                console.log("There's the same user. You might have some problem.");
+            }
+        });
+    
+        socketio.on("created_room_to_client", function(data) {
+            let roomname = data['room'];
+            let creator = data['creator'];
+            let pass = data['password'];
+    
+            //DOM manipulation to add a button
+            let new_room_btn = d.createElement("button");
+            new_room_btn.setAttribute("class","list-group-item list-group-item-action");
+            new_room_btn.appendChild(d.createTextNode(roomname + " | created by: " + creator));
+    
+            //if there is password protected, tell the user that it's private
+            if(pass !== "") {
+                new_room_btn.appendChild(d.createTextNode("  [ private room ]"));
+            }
+    
+            //If the room is clicked, change the current room to that room.
+            new_room_btn.addEventListener("click", function() {
+    
+                if(curruser === "") {
+                    alert("You must be a user to enter into rooms. Please type in a name");
+                    return;
+                }
+    
+                for(let i=0; i < my_banned_rooms.length; i++) {
+                    if(my_banned_rooms[i] === roomname) {
+                        alert("You cannot enter this room. You have been banned by the creator: " + creator);
+                        return;
+                    }
+                }
+    
+                room_creator = creator; //Setting global variable room_creator to be the current room's creator.
+    
+                //if the room is password protected
+                if(pass !== "") {
+                    let attempt_password = prompt("Please enter password to join: ");
+                    if(attempt_password !== pass) {
+                        alert("Password is incorrect.");
+                        return;
+                    }
+                }
+    
+                alert("You're in! Your current room is: " + roomname);
+    
+                //Show
+                $('#privateMsgBtn').show();
+                $('#banBtn').show();
+                $('#kickBtn').show();
+    
+                //Delete all the backgroundcolors of rooms and update the background color to current room
+                let listgroup = d.getElementsByClassName('list-group-item');
+                for(let i=0; i < listgroup.length; i++) {
+                    listgroup[i].style.backgroundColor = "";
+                    listgroup[i].style.color = "";
+                }
+                new_room_btn.style.backgroundColor = "lightblue";
+                new_room_btn.style.color = "white";
+    
+                //remove all the names in the current "users in the room" section
+                d.getElementById('users_in_the_room').innerHTML = "";
+    
+                d.getElementById("chatlog").innerHTML = ""; //clear the current messages when you enter another room
+                
+                //IMPORTANT: Before changing the current room value, send the curruser and the current room to the server to delete yourself from the room
+                socketio.emit("username_to_delete_server", {user: curruser, current_room: curr_room});
+    
+                //IMPORTANT: Client side deleting the user            
+                socketio.on('username_to_delete_client', function(data) {
+                    
+                    let users_children = d.getElementById('users_in_the_room').children;
+    
+                    console.log("users children " + users_children);
+    
+                    for(let i=0; i < users_children.length; i++) {
+                        if(users_children[i].children[0].value === data['user']) {
+                            users_children[i].remove();
+                        }
+                    }
+                });
+                
+    
+                curr_room = roomname;
+                console.log("button clicked. Your current room is: " + curr_room);
+                $('#current_room').html(curr_room);
+                
+                socketio.emit("username_to_curr_room_server", {user: curruser, current_room: curr_room});
+                           
+            }, false);
+    
+            d.getElementById("active_rooms").appendChild(new_room_btn);
+    
+            updateUser('username_to_curr_room_client');
+    
+        });
+    
+        function updateUser(socketmsg) {
+            socketio.on('username_to_curr_room_client', function(data) {
+                if(curr_room !== data['current_room']) {
+                    return;
+                }
+    
+                d.getElementById('users_in_the_room').innerHTML = "";
+    
+                let users_inthe_room = data['user'];
+                console.log("Users in the room: " + users_inthe_room);
+    
+    
+                for(let i=0; i < users_inthe_room.length; i++) {
+                    let usr = d.createElement("p");
+                    let newuser = d.createElement("INPUT");
+    
+                    newuser.setAttribute("type", "radio");
+                    newuser.setAttribute("name", "user_radio");
+                    newuser.setAttribute("value", users_inthe_room[i]);
+    
+    
+                    usr.appendChild(newuser);
+                    usr.appendChild(d.createTextNode(users_inthe_room[i]));
+    
+                    d.getElementById("users_in_the_room").appendChild(usr);
+                    
+                }
+           
+            });
+        }
+        
+    
+        function sendMessage(){
+            if(curruser === "") {
+                alert("Please enter your name to send messages");
+                return;
+            }
+    
+            let msg = curruser + " said: " + document.getElementById("message_input").value;
+            socketio.emit("message_to_server", {message:msg, current_room: curr_room});
+            
+            // $('#message_input').val(""); //Clear the input box
+            // d.getElementById("message_input").value = ""; //Clear the input box
+            d.getElementsByClassName('emojionearea-editor')[0].innerHTML = "";
+        }
+    
+    
+        socketio.on('kick_to_client', function(data) {
+            let user = data['user'];
+            let room = data['current_room'];
+    
+            let users_children = d.getElementById('users_in_the_room').children;
+    
+            for(let i=0; i < users_children.length; i++) {
+                if(users_children[i].children[0].value === user) {
+                    users_children[i].remove();
+                }
+            }
+    
+            if(user === curruser && room === curr_room) {
+                alert("You got kicked out of " + room);
+    
+                current_room = "Main Lobby";
+                d.getElementById('current_room').innerHTML = current_room;
+    
+                //Delete all the backgroundcolors of rooms and update the background color to main lobby
+                let listgroup = d.getElementsByClassName('list-group-item');
+                for(let i=0; i < listgroup.length; i++) {
+                    listgroup[i].style.backgroundColor = "";
+                    listgroup[i].style.color = "";
+                }
+                listgroup[0].style.backgroundColor = "lightblue";
+                listgroup[0].style.color = "white";
+    
+                //Clear out everything!!
+                init();
+            }
+            
+    
+    
+        });
+    
+        //Main lobby clears everything.
+        $('#main_lobby').on("click", function() {
+            init();
+        });
+    
+        $('#kickBtn').on("click", function() {
+            if(room_creator !== curruser) {
+                alert("You must be the creator of the room to kick out a user.");
+                return;
+            }
+    
+            let radios = d.getElementsByName('user_radio');
+            for(let i=0; i < radios.length; i++) {
+                if(radios[i].checked) {
+                    if(radios[i].value === curruser) {
+                        alert("You cannot kick yourself out.");
+                        return;
+                    }
+    
+                    socketio.emit('kick_to_server',{room: curr_room, user: radios[i].value});
+                    return;
+                }
+            }
+    
+            alert("You must choose a user.");
+            
+        });
+    
+    
+        $('#banBtn').on("click", function() {
+            if(room_creator !== curruser) {
+                alert("You are not the creator of the room. You must be the creator to ban a user.")
+                return;
+            }
+    
+            let radios = d.getElementsByName('user_radio');
+            for(let i=0; i < radios.length; i++) {
+                if(radios[i].checked) {
+                    if(radios[i].value === curruser) {
+                        alert("You cannot ban yourself");
+                        return;
+                    }
+                    socketio.emit('ban_to_server',{room: curr_room, user: radios[i].value});
+                    return;
+                }
+            }
+    
+            alert("You must choose a user.");
+        });
+    
+    
+    
+        socketio.on('ban_to_client', function(data) {
+            let user = data['user'];
+            let room = data['room'];
+    
+            if(user === curruser && room === curr_room) {
+                alert("You got banned from " + room);
+    
+                current_room = "Main Lobby";
+                d.getElementById('current_room').innerHTML = current_room;
+    
+                //Delete all the backgroundcolors of rooms and update the background color to main lobby
+                let listgroup = d.getElementsByClassName('list-group-item');
+                for(let i=0; i < listgroup.length; i++) {
+                    listgroup[i].style.backgroundColor = "";
+                    listgroup[i].style.color = "";
+                }
+                listgroup[0].style.backgroundColor = "lightblue";
+                listgroup[0].style.color = "white";
+    
+                my_banned_rooms.push(room);
+    
+                //Clear out everything!!
+                init();
+            }
+    
+            let users_children = d.getElementById('users_in_the_room').children;
+    
+            for(let i=0; i < users_children.length; i++) {
+                if(users_children[i].children[0].value === user) {
+                    users_children[i].remove();
+                }
+            }
+        });
+    
+        let user_to_send = "";
+    
+    
+        $('#privateMsgBtn').on("click", function() {
+    
+            if(curruser === "") {
+                alert("You must be a user to send messages.");
+                return;
+            }
+    
+            //Get the user to private message
+            let radios = d.getElementsByName('user_radio');
+            for(let i=0; i < radios.length; i++) {
+                if(radios[i].checked) {
+                    if(radios[i].value === curruser) {
+                        alert("You cannot chat with yourself.");
+                        return;
+                    }
+    
+                    $('#private_msg_href').show();
+                    // scroll to the bottom of the page to show private msg box.
+                    $('html, body').animate({scrollTop:$(document).height()}, 'slow');
+    
+                    //Empty all the current chats.
+                    $('#private_msg_box').html("");
+    
+                    user_to_send = radios[i].value;
+    
+                    return;
+                }
+            }
+    
+            alert("You must choose a user.");
+    
+            return false;
+    
+        });
+    
+    
+        $('#private_sendBtn').on("click", function() {
+            if(d.getElementById("private_message_input").value === "") {
+                alert("Please enter a message.");
+                return;
+            }
+            let msg = curruser + " said: " + d.getElementById("private_message_input").value;
+    
+            socketio.emit("private_msg_to_server", {message:msg, room: curr_room, user: user_to_send, sender: curruser});
+           
+            user_to_send = "";
+    
+            $('#private_message_input').val(""); //Clear the input box
+    
+            return false;
+        });
+    
+        
+    
+    
+        socketio.on('private_msg_to_client', function(data) {
+            let user = data['user']; //The user that the message is sent to
+            let msg = data['message'];
+            let sender = data['sender'];
+    
+            //If you are the user that the message has been sent to
+            if(curruser === user || curruser === sender) {
+                $('#private_msg_href').show();
+                // scroll to the bottom of the page to show private msg box.
+                $('html, body').animate({scrollTop:$(document).height()}, 'slow');
+    
+                d.getElementById("private_msg_box").appendChild(document.createTextNode(msg));
+                d.getElementById("private_msg_box").appendChild(document.createElement("hr"));
+    
+                if(curruser === user) {
+                    user_to_send = sender;
+                }
+                else {
+                    user_to_send = user;
+                }
+            }
+        });
+    
+    
+        $('#create_room').on("click", function() {
+            let new_room = $('#chatroom_name').val();
+    
+            if(curruser === "") {
+                alert("Please enter your nickname to create rooms.");
+                $('#chatroom_name').val(""); //Clear input
+                return;
+            }
+    
+            let radios = d.getElementsByName('room_type');
+            for( let i = 0; i < radios.length; i++) {
+                if(radios[i].checked) {
+                    let pass = $('#password').val();
+    
+                    if(radios[i].value === "private" && pass === ""){
+                        alert("Please enter a password for private chat rooms");
+                        $('#pass_box').show();
+                        return;
+                    }   
+    
+                    socketio.emit('create_room_to_server',{room: new_room, creator: curruser, password: pass});
+    
+                    $('#chatroom_name').val(""); //Clear input
+                    $('#password').val("");
+                    $('#pass_box').hide();
+                    return;
+                }
+            }
+            alert("You must choose PUBLIC or PRIVATE.");
+    
+        });
+    
+    
+        //Login and Logout
+        $("#loginBtn").on("click", function(event) {
+    
+            curruser = $('#logged_nickname').val();
+            socketio.emit('logged_user_to_server', {user: curruser, room: curr_room});
+            console.log("Attempted to log in with username: " + curruser);
+            d.getElementById("logged_user").innerHTML = curruser;
+            $('#logged_nickname').val("");
+    
+            init(); //Clear out everything if new name is entered.
+    
+    
+        });
+    
+        //Creative portion emojis
+        $('#message_input').emojioneArea(  {
+            pickerPosition: "right"
+        });
+    
+    
+        </script>
+
+   </body>
+
+</html>
