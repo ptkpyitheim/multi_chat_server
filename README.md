@@ -1,5 +1,5 @@
 
-# Module 6 group Creative Portion Description
+# Multi Room Chat Server
 
 ## Emojis
 Not only can the users send regular messages, users can also use emojis to communicate. This is implemented by using a jquery plugin called EmojiOne from CDNJS on GitHub.
